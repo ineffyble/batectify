@@ -1,0 +1,14 @@
+{
+  "name": "batectify",
+  "version": "1.0.0",
+  "description": "Convert Docker container configuration files to batect.yml",
+  "author": "Effy Elden",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {
+    "jasmine": "^3.4.0"
+  },
+  "scripts": {
+    "jasmine": "jasmine --config=test/jasmine.json"
+  }
+}

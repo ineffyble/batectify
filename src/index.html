@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Batectify</title>
+    <script src="js/lib/js-yaml.min.js"></script>
+    <script src="js/lib/ajv.min.js"></script>
+    <link rel="stylesheet" href="css/lib/mini-default.min.css" />
+    <link rel="stylesheet" href="css/batectify.css" />
+</head>
+<body>
+    <header class="container">
+        <h1>Batectify!</h1>
+    </header>
+    <section class="container">
+        <div class="row">
+            <div class="col-md-6">
+                <h2>Input a docker-compose.yml file</h2>
+                <textarea id="input"></textarea>
+            </div>
+            <div class="col-md-6">
+                <h2>Receive a batect.yml file</h2>
+                <textarea id="output" readonly></textarea>
+            </div>
+        </div>
+        <div style="text-align: center;">
+            <button type="button" id="convert" class="primary">Convert!</button>
+        </div>
+        <div id="error">
+        </div>
+    </section>
+    <footer class="container">
+        <p>
+            <a href="https://github.com/ineffyble/batectify"><span class="icon-link"></span> GitHub</a>
+        </p>
+    </footer>
+    <script src="js/batect-schema.js"></script>
+    <script src="js/batectify.js"></script>
+    <script src="js/batectify-dc.js"></script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+header, footer {
+    max-width: 800px;
+    margin-left: auto;
+    margin-right: auto;
+    text-align: center;
+}
+
+
+#input, #output {
+    width: 100%;
+    height: 500px;
+}
+
+.card {
+    max-width: 100%;
+}
