@@ -1,7 +1,7 @@
 let batectSchema = {
     "title": "JSON schema for Batect configuration files",
     "$schema": "http://json-schema.org/draft-07/schema#",
-    "id": "https://ide-integration.batect.dev/v1/configSchema.json",
+    "$id": "https://ide-integration.batect.dev/v1/configSchema.json",
     "type": "object",
     "additionalProperties": false,
     "properties": {
@@ -714,3 +714,5 @@ let batectSchema = {
       }
     }
 }
+
+module.exports = batectSchema;
