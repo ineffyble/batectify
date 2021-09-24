@@ -93,21 +93,88 @@ function mapDcKeyToBatect(simpleKeyMapping, key, serviceName, dcs, warnings) {
     return container;
 }
 
+function generateNameForBatectVolume(serviceName, path) {
+    let name = serviceName + "_" + path.replace(/\//g, '_').slice(0, 255);
+    return name;
+}
+
+function dcVolumeStringToBatect(volumeString, serviceName, warnings) {
+    let bits = volumeString.split(':');
+    let bitsNum = bits.length;
+    switch(bitsNum) {
+        case 1:
+            // TARGET-only, maps to a cache volume
+            return ({
+                "name": generateNameForBatectVolume(serviceName, bits[0]),
+                "type": "cache",
+                "container": bits[0],
+            })
+        case 2:
+        case 3:
+            if (bits[0].indexOf('/') === -1) {
+                // Named volume, maps to a cache volume
+                let volume = {
+                    "name": bits[0],
+                    "type": "cache",
+                    "container": bits[1]
+                };
+                if (bitsNum === 3) {
+                    volume.options = bits[2];
+                }
+                return volume;
+            }
+            if (bitsNum === 2 & bits[1].indexOf('/') === -1) {
+                // TARGET-only, maps to a cache volume
+                return ({
+                    "name": generateNameForBatectVolume(serviceName, bits[0]),
+                    "type": "cache",
+                    "container": bits[0],
+                    "options": bits[1],
+                });
+            }
+            // Should map directly to batect string format
+            return volumeString;
+        default:
+            throw("Unable to parse volume, unexpected syntax");
+    }
+}
+
 function dcVolumeToBatect(vol, serviceName, warnings) {
     if (typeof (vol) === "string") {
-        return (vol);
+        return dcVolumeStringToBatect(vol, serviceName, warnings);
     } else {
-        let volumeSupportedKeys = ["type", "source", "target"];
+        let volumeSupportedKeys = ["type", "source", "target", "read_only"];
         let volumeProvidedKeys = Object.keys(vol);
         warnings.unsupportedKeys.push(...getUnsupportedKeys("service " + serviceName + " volume", volumeSupportedKeys, volumeProvidedKeys));
-        if ((vol["type"]) && (vol["type"] !== "volume")) {
-            warnings.unsupportedValues.push({ type: 'volume', service: serviceName, key: "type", value: vol["type"] });
-            return;
+        switch (vol["type"]) {
+            case "volume":
+                batectVolume = {
+                    "type": "cache",
+                    "container": vol["target"],
+                };
+                if (vol["source"]) {
+                    // For volume type, this is the name of a volume defined in the top-level volumes key
+                    batectVolume["name"] = vol["source"];
+                } else {
+                    batectVolume["name"] = generateNameForBatectVolume(serviceName, vol["target"]);
+                }
+                if (vol["read_only"] && vol["read_only"] === true) {
+                    batectVolume["options"] = "ro";
+                }
+                return batectVolume;
+            case "bind":
+                batectVolume = {
+                    "local": vol["source"],
+                    "container": vol["target"]
+                };
+                if (vol["read_only"] && vol["read_only"] === true) {
+                    batectVolume["options"] = "ro";
+                }
+                return batectVolume;
+            default:
+                warnings.unsupportedValues.push({ type: 'volume', service: serviceName, key: "type", value: vol["type"] });
+                return;
         }
-        return ({
-            "local": vol["source"],
-            "container": vol["target"]
-        });
     }
 }
 

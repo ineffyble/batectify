@@ -115,16 +115,182 @@ describe("dcHealthcheckToBatect", function () {
 
 describe("dcVolumeToBatect", function () {
 
-    it("should pass a string through without conversion", function () {
-        let input = "./work:/work";
-        let result = dcVolumeToBatect(input, "web", warnings);
-        expect(result).toEqual(input);
+    describe("short syntax", function () {
+
+        // Examples from https://docs.docker.com/compose/compose-file/compose-file-v3/#volumes
+
+        it("should pass a string with a relative host-path source through without conversion", function () {
+            let input = "./cache:/tmp/cache";
+            let result = dcVolumeToBatect(input, "web", warnings);
+            expect(result).toEqual(input);
+        });
+
+        it("should pass a string with an absolute host-path source through without conversion", function () {
+            let input = "/opt/data:/var/lib/mysql";
+            let result = dcVolumeToBatect(input, "web", warnings);
+            expect(result).toEqual(input);
+        });
+
+        it("should pass a string with a host-path source and options through without conversion", function () {
+            let input = "~/configs:/etc/configs/:ro";
+            let result = dcVolumeToBatect(input, "web", warnings);
+            expect(result).toEqual(input);
+        });
+
+        it("should convert a target-only string to a volume object with generated name", function () {
+            let input = "/var/lib/mysql";
+            let result = dcVolumeToBatect(input, "web", warnings);
+            expect(result).toEqual({
+                name: 'web__var_lib_mysql',
+                type: 'cache',
+                container: '/var/lib/mysql'
+            });
+        });
+
+        it("should preserve options when converting a target-only string to a volume object", function () {
+            let input = "/var/lib/mysql:ro";
+            let result = dcVolumeToBatect(input, "web", warnings);
+            expect(result).toEqual({
+                name: 'web__var_lib_mysql',
+                type: 'cache',
+                container: '/var/lib/mysql',
+                options: 'ro'
+            });
+        });
+
+        it("should set the name when converting a named volume string to a volume object ", function () {
+            let input = "datavolume:/var/lib/mysql";
+            let result = dcVolumeToBatect(input, "web", warnings);
+            expect(result).toEqual({
+                name: 'datavolume',
+                type: 'cache',
+                container: '/var/lib/mysql',
+            });
+        });
     });
 
-    it("should convert volume object parameters to batect format", function () {
+    describe("long syntax", function () {
+
+        describe("bind type", function () {
+            it("should convert bind volume object parameters to batect format", function () {
+                let input = {
+                    "type": "bind",
+                    "source": "./work",
+                    "target": "/work",
+                };
+                let expected = {
+                    "local": "./work",
+                    "container": "/work",
+                };
+                let result = dcVolumeToBatect(input, "web", warnings);
+                expect(result).toEqual(expected);
+            });
+
+            it("should append read_only to docker options parameter if true", function () {
+                let input = {
+                    "type": "bind",
+                    "source": "./work",
+                    "target": "/work",
+                    "read_only": true,
+                };
+                let expected = {
+                    "local": "./work",
+                    "container": "/work",
+                    "options": "ro",
+                };
+                let result = dcVolumeToBatect(input, "web", warnings);
+                expect(result).toEqual(expected);
+            });
+
+            it("should not append read_only to docker options parameter if false", function () {
+                let input = {
+                    "type": "bind",
+                    "source": "./work",
+                    "target": "/work",
+                    "read_only": false,
+                };
+                let expected = {
+                    "local": "./work",
+                    "container": "/work",
+                };
+                let result = dcVolumeToBatect(input, "web", warnings);
+                expect(result).toEqual(expected);
+            });
+        });
+
+        describe("volume type", function () {
+            it("should convert volume volume object parameters to batect format", function () {
+                let input = {
+                    "type": "volume",
+                    "source": "work",
+                    "target": "/work",
+                };
+                let expected = {
+                    "type": "cache",
+                    "name": "work",
+                    "container": "/work",
+                };
+                let result = dcVolumeToBatect(input, "web", warnings);
+                expect(result).toEqual(expected);
+            });
+        });
+
+        describe("volume type", function () {
+            it("should generate a name from the service and path if none is provided", function () {
+                let input = {
+                    "type": "volume",
+                    "target": "/var/lib/mysql",
+                };
+                let expected = {
+                    "type": "cache",
+                    "name": "web__var_lib_mysql",
+                    "container": "/var/lib/mysql",
+                };
+                let result = dcVolumeToBatect(input, "web", warnings);
+                expect(result).toEqual(expected);
+            });
+        });
+
+        it("should append read_only to docker options parameter if true", function () {
+            let input = {
+                "type": "bind",
+                "source": "./work",
+                "target": "/work",
+                "read_only": true,
+            };
+            let expected = {
+                "local": "./work",
+                "container": "/work",
+                "options": "ro",
+            };
+            let result = dcVolumeToBatect(input, "web", warnings);
+            expect(result).toEqual(expected);
+        });
+
+        it("should not append read_only to docker options parameter if false", function () {
+            let input = {
+                "type": "bind",
+                "source": "./work",
+                "target": "/work",
+                "read_only": false,
+            };
+            let expected = {
+                "local": "./work",
+                "container": "/work",
+            };
+            let result = dcVolumeToBatect(input, "web", warnings);
+            expect(result).toEqual(expected);
+        });
+    });
+
+    it("should not include unsupported parameters and warn", function () {
         let input = {
+            "type": "bind",
             "source": "./work",
             "target": "/work",
+            "volume": {
+                "nocopy": true,
+            },
         };
         let expected = {
             "local": "./work",
@@ -132,20 +298,7 @@ describe("dcVolumeToBatect", function () {
         };
         let result = dcVolumeToBatect(input, "web", warnings);
         expect(result).toEqual(expected);
-    });
-
-    it("should not include unsupported parameters", function () {
-        let input = {
-            "source": "./work",
-            "target": "/work",
-            "read_only": true,
-        };
-        let expected = {
-            "local": "./work",
-            "container": "/work",
-        };
-        let result = dcVolumeToBatect(input, "web", warnings);
-        expect(result).toEqual(expected);
+        expect(warnings.unsupportedKeys.length).toEqual(1);
     });
 
     it("should warn on unsupported volume types and not return anything", function () {
@@ -153,10 +306,8 @@ describe("dcVolumeToBatect", function () {
         });
 
         let input = {
-            "type": "bind",
-            "source": "./work",
+            "type": "tmpfs",
             "target": "/work",
-            "read_only": true,
         };
         let result = dcVolumeToBatect(input, "web", warnings);
         expect(result).toBeUndefined();
@@ -164,7 +315,7 @@ describe("dcVolumeToBatect", function () {
             type: "volume",
             service: "web",
             key: "type",
-            value: "bind"
+            value: "tmpfs"
         },
         );
     });
