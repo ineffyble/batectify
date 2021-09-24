@@ -1,5 +1,9 @@
 # IDE configuration
 .idea/
+.vscode/
 
 # NodeJS
 node_modules
+
+# Jasmine
+jasmine.log

@@ -1,21 +1,34 @@
+function getUnsupportedKeys(parent, supportedKeys, providedKeys) {
+    let unsupportedKeys = providedKeys.filter(function (key) {
+        return !supportedKeys.includes(key);
+    });
+    return unsupportedKeys.map(function(key) { return {parent, key} });
+}
+
 function dockerComposeToBatect(dc) {
+    let warnings = {
+        unsupportedKeys: [],
+        conflictingValues: [],
+        missingMappings: [],
+        unsupportedValues: [],
+    };
     let supportedRootKeys = ["version", "services"];
     let providedRootKeys = Object.keys(dc);
-    warnOnUnsupportedKeys("root", supportedRootKeys, providedRootKeys);
+    warnings.unsupportedKeys.push(...getUnsupportedKeys("root", supportedRootKeys, providedRootKeys));
     let batectConfig = {
         "containers": {},
         "tasks": {},
     };
     Object.keys(dc["services"]).forEach(function (serviceName) {
-        let container = dcServiceToBatect(serviceName, dc["services"][serviceName]);
+        let container = dcServiceToBatect(serviceName, dc["services"][serviceName], warnings);
         if (container) {
             batectConfig["containers"][serviceName] = container;
         }
     });
-    return batectConfig;
+    return { config: batectConfig, warnings };
 }
 
-function dcServiceToBatect(name, dcs) {
+function dcServiceToBatect(name, dcs, warnings) {
     let supportedKeys = [
         "build", "cap_add", "cap_drop", "command", "depends_on", "environment",
         "expose", "healthcheck", "image", "ports", "privileged", "init", "volumes", "working_dir"
@@ -29,66 +42,66 @@ function dcServiceToBatect(name, dcs) {
         "working_dir": "working_directory"
     };
     let providedKeys = Object.keys(dcs);
-    warnOnUnsupportedKeys("service " + name, supportedKeys, providedKeys);
+    warnings.unsupportedKeys.push(...getUnsupportedKeys("service " + name, supportedKeys, providedKeys));
     let container = {};
     supportedKeys.forEach(function (key) {
         if (!dcs[key]) {
             return;
         }
         if (Object.keys(simpleKeyMapping).includes(key)) {
-            container = Object.assign(container, mapDcKeyToBatect(simpleKeyMapping, key, name, dcs));
+            container = Object.assign(container, mapDcKeyToBatect(simpleKeyMapping, key, name, dcs, warnings));
         } else {
             switch (key) {
                 case "build":
-                    container = Object.assign(container, dcBuildToBatect(dcs, key, name));
+                    container = Object.assign(container, dcBuildToBatect(dcs, key, name, warnings));
                     break;
                 case "image":
                     if (dcs["build"]) {
-                        displayCard("warning", "Conflicting values for service " + name, "Both 'build' and 'image' are specified. 'image' will be dropped.");
+                        warnings.conflictingValues.push({ type: 'service', service: name, key: 'build', msg: "Both 'build' and 'image' are specified. 'image' will be dropped."});
                     } else {
                         container["image"] = dcs[key];
                     }
                     break;
                 case "command":
-                    container["command"] = dcCommandToBatect(dcs, key);
+                    container["command"] = dcCommandToBatect(dcs, key, warnings);
                     break;
                 case "environment":
-                    container["environment"] = dcEnvironmentToBatect(dcs, key);
+                    container["environment"] = dcEnvironmentToBatect(dcs, key, warnings);
                     break;
                 case "healthcheck":
-                    container["health_check"] = dcHealthcheckToBatect(dcs, key, name);
+                    container["health_check"] = dcHealthcheckToBatect(dcs, key, name, warnings);
                     break;
                 case "volumes":
-                    container["volumes"] = dcVolumeArrayToBatect(dcs, key, name);
+                    container["volumes"] = dcVolumeArrayToBatect(dcs, key, name, warnings);
                     break;
                 case "expose":
                 case "ports":
-                    container["ports"] = dcPortArrayToBatect(dcs, name);
+                    container["ports"] = dcPortArrayToBatect(dcs, name, warnings);
                     break;
                 default:
-                    displayCard("error", "Supported key " + key + " has no mapping logic", "This is a bug");
+                    warnings.missingMappings.push({ type: 'service', key, msg: "Key has no mapping logic. This is a bug." });
             }
         }
     });
     return container;
 }
 
-function mapDcKeyToBatect(simpleKeyMapping, key, serviceName, dcs) {
+function mapDcKeyToBatect(simpleKeyMapping, key, serviceName, dcs, warnings) {
     let container = {};
     let newKey = simpleKeyMapping[key];
     container[newKey] = dcs[key];
     return container;
 }
 
-function dcVolumeToBatect(vol, serviceName) {
+function dcVolumeToBatect(vol, serviceName, warnings) {
     if (typeof (vol) === "string") {
         return (vol);
     } else {
         let volumeSupportedKeys = ["type", "source", "target"];
         let volumeProvidedKeys = Object.keys(vol);
-        warnOnUnsupportedKeys("service " + serviceName + " volume", volumeSupportedKeys, volumeProvidedKeys);
+        warnings.unsupportedKeys.push(...getUnsupportedKeys("service " + serviceName + " volume", volumeSupportedKeys, volumeProvidedKeys));
         if ((vol["type"]) && (vol["type"] !== "volume")) {
-            displayCard("warning", "Unsupported volume type " + vol["type"], "This volume type specified for service " + serviceName + " is not supported.");
+            warnings.unsupportedValues.push({ type: 'volume', service: serviceName, key: "type", value: vol["type"] });
             return;
         }
         return ({
@@ -98,14 +111,14 @@ function dcVolumeToBatect(vol, serviceName) {
     }
 }
 
-function dcBuildToBatect(dcs, key, serviceName) {
+function dcBuildToBatect(dcs, key, serviceName, warnings) {
     let container = {};
     if (typeof (dcs[key]) === "string") {
         container["build_directory"] = dcs[key];
     } else {
         let buildSupportedKeys = ["context", "dockerfile", "args"];
         let buildProvidedKeys = Object.keys(dcs[key]);
-        warnOnUnsupportedKeys("service " + serviceName + " build", buildSupportedKeys, buildProvidedKeys);
+        warnings.unsupportedKeys.push(...getUnsupportedKeys("service " + serviceName + " build", buildSupportedKeys, buildProvidedKeys));
         container["build_directory"] = dcs[key]["context"];
         if (dcs[key]["dockerfile"]) {
             container["dockerfile"] = dcs[key]["dockerfile"];
@@ -117,7 +130,7 @@ function dcBuildToBatect(dcs, key, serviceName) {
     return container;
 }
 
-function dcCommandToBatect(dcs, key) {
+function dcCommandToBatect(dcs, key, warnings) {
     if (typeof (dcs[key]) === "object") {
         return dcs[key].join(" ");
     } else {
@@ -125,7 +138,7 @@ function dcCommandToBatect(dcs, key) {
     }
 }
 
-function dcEnvironmentToBatect(dcs, key) {
+function dcEnvironmentToBatect(dcs, key, warnings) {
     let environment = {};
     if (Array.isArray(dcs[key])) {
         dcs[key].forEach(function (env) {
@@ -145,11 +158,11 @@ function dcEnvironmentToBatect(dcs, key) {
     return environment;
 }
 
-function dcHealthcheckToBatect(dcs, key, serviceName) {
+function dcHealthcheckToBatect(dcs, key, serviceName, warnings) {
     let healthcheck = {};
     let healthcheckSupportedKeys = ["interval", "retries", "start_period"];
     let healthcheckProvidedKeys = Object.keys(dcs[key]);
-    warnOnUnsupportedKeys("service " + serviceName + " healthcheck", healthcheckSupportedKeys, healthcheckProvidedKeys);
+    warnings.unsupportedKeys.push(...getUnsupportedKeys("service " + serviceName + " healthcheck", healthcheckSupportedKeys, healthcheckProvidedKeys));
     if (dcs[key]["interval"]) {
         healthcheck["interval"] = dcs[key]["interval"];
     }
@@ -162,10 +175,10 @@ function dcHealthcheckToBatect(dcs, key, serviceName) {
     return healthcheck;
 }
 
-function dcVolumeArrayToBatect(dcs, key, serviceName) {
+function dcVolumeArrayToBatect(dcs, key, serviceName, warnings) {
     let volumes = [];
     dcs[key].forEach(function (vol) {
-        let volume = dcVolumeToBatect(vol, serviceName);
+        let volume = dcVolumeToBatect(vol, serviceName, warnings);
         if (volume) {
             volumes.push(volume);
         }
@@ -173,13 +186,13 @@ function dcVolumeArrayToBatect(dcs, key, serviceName) {
     return volumes;
 }
 
-function dcPortToBatect(port, serviceName) {
+function dcPortToBatect(port, serviceName, warnings) {
     if (typeof(port) === "object") {
         let supportedPortKeys = ["target", "published", "protocol"];
         let providedPortKeys = Object.keys(port);
-        warnOnUnsupportedKeys("service " + serviceName, supportedPortKeys, providedPortKeys);
+        warnings.unsupportedKeys.push(...getUnsupportedKeys("service " + serviceName, supportedPortKeys, providedPortKeys));
         if (port["protocol"] && port["protocol"] !== "tcp") {
-            displayCard("warning", "service " + serviceName + " - " + port["protocol"] + " ports unsupported", "batect only supports TCP ports");
+            warnings.unsupportedValues.push({ type: "port", service: serviceName, key: "protocol", value: port["protocol"], msg: "batect only supports TCP ports" });
             return;
         }
         let batectPort = {};
@@ -192,18 +205,18 @@ function dcPortToBatect(port, serviceName) {
         return batectPort;
     } else {
         if (port.match(/\/udp/)) {
-            displayCard("warning", "service " + serviceName + " - UDP ports unsupported", "batect only supports TCP ports");
+            warnings.unsupportedValues.push({ type: "port", service: serviceName, key: "port", value: port, msg: "UDP ports unsupported. batect only supports TCP ports" });
             return;
         }
         return port;
     }
 }
 
-function dcPortArrayToBatect(dcs, serviceName) {
+function dcPortArrayToBatect(dcs, serviceName, warnings) {
     let ports = [];
     if (dcs["expose"]) {
         dcs["expose"].forEach(function(port) {
-            let batectPort = dcPortToBatect(port, serviceName);
+            let batectPort = dcPortToBatect(port, serviceName, warnings);
             if (batectPort) {
                 ports.push(batectPort);
             }
@@ -211,7 +224,7 @@ function dcPortArrayToBatect(dcs, serviceName) {
     }
     if (dcs["ports"]) {
         dcs["ports"].forEach(function(port) {
-           let batectPort = dcPortToBatect(port, serviceName);
+           let batectPort = dcPortToBatect(port, serviceName, warnings);
            if (batectPort) {
                ports.push(batectPort);
            }

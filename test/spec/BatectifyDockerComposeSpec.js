@@ -1,3 +1,14 @@
+let warnings;
+
+beforeEach(function () {
+    warnings = {
+        unsupportedKeys: [],
+        conflictingValues: [],
+        missingMappings: [],
+        unsupportedValues: [],
+    };
+});
+
 describe("dcEnvironmentToBatect", function () {
     it("should pass an object through without conversion", function () {
         let input = {
@@ -6,7 +17,7 @@ describe("dcEnvironmentToBatect", function () {
                 "beep": "boop",
             },
         };
-        let result = dcEnvironmentToBatect(input, "environment");
+        let result = dcEnvironmentToBatect(input, "environment", warnings);
         expect(result).toEqual(input["environment"]);
     });
 
@@ -21,7 +32,7 @@ describe("dcEnvironmentToBatect", function () {
             "ENVIRONMENT": "dev",
             "beep": "boop"
         };
-        let result = dcEnvironmentToBatect(input, "environment");
+        let result = dcEnvironmentToBatect(input, "environment", warnings);
         expect(result).toEqual(expected);
     });
 
@@ -36,7 +47,7 @@ describe("dcEnvironmentToBatect", function () {
             "ENVIRONMENT": "$ENVIRONMENT",
             "beep": "boop"
         };
-        let result = dcEnvironmentToBatect(input, "environment");
+        let result = dcEnvironmentToBatect(input, "environment", warnings);
         expect(result).toEqual(expected);
     });
 });
@@ -46,7 +57,7 @@ describe("dcCommandToBatect", function () {
         let input = {
             "command": "/bin/bash ls",
         };
-        let result = dcCommandToBatect(input, "command");
+        let result = dcCommandToBatect(input, "command", warnings);
         expect(result).toEqual(input["command"]);
     });
 
@@ -58,16 +69,12 @@ describe("dcCommandToBatect", function () {
             ],
         };
         let expected = "/bin/bash ls";
-        let result = dcCommandToBatect(input, "command");
+        let result = dcCommandToBatect(input, "command", warnings);
         expect(result).toEqual(expected);
     });
 });
 
 describe("dcHealthcheckToBatect", function () {
-    beforeEach(function () {
-        warnOnUnsupportedKeys = jasmine.createSpy("warnOnUnsupportedKeys", function () {
-        });
-    });
 
     it("should pass through supported parameters", function () {
         let input = {
@@ -76,7 +83,7 @@ describe("dcHealthcheckToBatect", function () {
                 "retries": "5",
             },
         };
-        let result = dcHealthcheckToBatect(input, "healthcheck", "service");
+        let result = dcHealthcheckToBatect(input, "healthcheck", "service", warnings);
         expect(result).toEqual(input["healthcheck"]);
     });
 
@@ -90,36 +97,27 @@ describe("dcHealthcheckToBatect", function () {
         let expected = {
             "interval": "5s",
         };
-        let result = dcHealthcheckToBatect(input, "healthcheck", "service");
+        let result = dcHealthcheckToBatect(input, "healthcheck", "service", warnings);
         expect(result).toEqual(expected);
     });
 
-    it("should check if unsupported parameters are present", function () {
+    it("should warn if unsupported parameters are present", function () {
         let input = {
             "healthcheck": {
                 "interval": "5s",
                 "test": ["CMD", "curl", "http://test.com"],
             },
         };
-        dcHealthcheckToBatect(input, "healthcheck", "web");
-        expect(warnOnUnsupportedKeys.calls.count()).toEqual(1);
-        expect(warnOnUnsupportedKeys.calls.first().args).toEqual([
-            "service web healthcheck",
-            ["interval", "retries", "start_period"],
-            ["interval", "test"],
-        ]);
+        dcHealthcheckToBatect(input, "healthcheck", "web", warnings);
+        expect(warnings.unsupportedKeys[0]).toEqual({ key: 'test', parent: 'service web healthcheck' });
     });
 });
 
 describe("dcVolumeToBatect", function () {
-    beforeEach(function () {
-        warnOnUnsupportedKeys = jasmine.createSpy("warnOnUnsupportedKeys", function () {
-        });
-    });
 
     it("should pass a string through without conversion", function () {
         let input = "./work:/work";
-        let result = dcVolumeToBatect(input, "web");
+        let result = dcVolumeToBatect(input, "web", warnings);
         expect(result).toEqual(input);
     });
 
@@ -132,24 +130,9 @@ describe("dcVolumeToBatect", function () {
             "local": "./work",
             "container": "/work",
         };
-        let result = dcVolumeToBatect(input, "web");
+        let result = dcVolumeToBatect(input, "web", warnings);
         expect(result).toEqual(expected);
     });
-
-    it("should check if unsupported parameters are present", function () {
-        let input = {
-            "source": "./work",
-            "target": "/work",
-        };
-        dcVolumeToBatect(input, "web");
-        expect(warnOnUnsupportedKeys.calls.count()).toEqual(1);
-        expect(warnOnUnsupportedKeys.calls.first().args).toEqual([
-            "service web volume",
-            ["type", "source", "target"],
-            ["source", "target"],
-        ]);
-    });
-
 
     it("should not include unsupported parameters", function () {
         let input = {
@@ -161,7 +144,7 @@ describe("dcVolumeToBatect", function () {
             "local": "./work",
             "container": "/work",
         };
-        let result = dcVolumeToBatect(input, "web");
+        let result = dcVolumeToBatect(input, "web", warnings);
         expect(result).toEqual(expected);
     });
 
@@ -175,23 +158,19 @@ describe("dcVolumeToBatect", function () {
             "target": "/work",
             "read_only": true,
         };
-        let result = dcVolumeToBatect(input, "web");
+        let result = dcVolumeToBatect(input, "web", warnings);
         expect(result).toBeUndefined();
-        expect(displayCard.calls.count()).toEqual(1);
-        expect(displayCard.calls.first().args).toEqual([
-                "warning",
-                "Unsupported volume type bind",
-                "This volume type specified for service web is not supported."
-            ],
+        expect(warnings.unsupportedValues[0]).toEqual({
+            type: "volume",
+            service: "web",
+            key: "type",
+            value: "bind"
+        },
         );
     });
 });
 
 describe("dcVolumeArrayToBatect", function () {
-    beforeAll(function () {
-        warnOnUnsupportedKeys = jasmine.createSpy("warnOnUnsupportedKeys", function () {
-        });
-    });
 
     it("should return an array of volumes", function () {
         let input = {
@@ -203,17 +182,13 @@ describe("dcVolumeArrayToBatect", function () {
                 },
             ],
         };
-        let result = dcVolumeArrayToBatect(input, "volumes", "web");
+        let result = dcVolumeArrayToBatect(input, "volumes", "web", warnings);
         expect(Array.isArray(result)).toEqual(true);
     });
 });
 
 
 describe("dcBuildToBatect", function () {
-    beforeEach(function () {
-        warnOnUnsupportedKeys = jasmine.createSpy("warnOnUnsupportedKeys", function () {
-        });
-    });
 
     it("should only return a build_directory if given a string", function () {
         let input = {
@@ -222,23 +197,8 @@ describe("dcBuildToBatect", function () {
         let expected = {
             "build_directory": "docker/image",
         };
-        let result = dcBuildToBatect(input, "build", "web");
+        let result = dcBuildToBatect(input, "build", "web", warnings);
         expect(result).toEqual(expected);
-    });
-
-    it("should check for unsupported keys if given an object", function () {
-        let input = {
-            "build": {
-                "context": "docker/image"
-            },
-        };
-        dcBuildToBatect(input, "build", "web");
-        expect(warnOnUnsupportedKeys.calls.count()).toEqual(1);
-        expect(warnOnUnsupportedKeys.calls.first().args).toEqual([
-            "service web build",
-            ["context", "dockerfile", "args"],
-            ["context"],
-        ]);
     });
 
     it("should return a mapped set of batect parameters if given an object", function () {
@@ -261,16 +221,12 @@ describe("dcBuildToBatect", function () {
                 "buildno": "1",
             }
         };
-        let result = dcBuildToBatect(input, "build", "web");
+        let result = dcBuildToBatect(input, "build", "web", warnings);
         expect(result).toEqual(expected);
     });
 });
 
 describe("dockerComposeToBatect", function () {
-    beforeEach(function () {
-        warnOnUnsupportedKeys = jasmine.createSpy("warnOnUnsupportedKeys", function () {
-        });
-    });
 
     it("should return a batect configuration file object", function () {
         let input = {
@@ -289,59 +245,35 @@ describe("dockerComposeToBatect", function () {
             },
             "tasks": {},
         };
-        let result = dockerComposeToBatect(input);
+        let result = dockerComposeToBatect(input).config;
         expect(result).toEqual(expected);
     });
+});
 
-    it("should check for unsupported keys", function () {
+describe("mapDcKeyToBatect", function () {
+    it("should map one key to another", function () {
         let input = {
-            "version": 3.1,
-            "services": {
-                "alpine": {
-                    "image": "alpine:latest",
-                },
-            },
-        };
-        dockerComposeToBatect(input);
-        expect(warnOnUnsupportedKeys.calls.first().args).toEqual([
-                "root",
-                ["version", "services"],
-                ["version", "services"],
+            "depends_on": [
+                "web"
             ],
-        );
+        };
+        let mapping = {
+            "depends_on": "dependencies"
+        };
+        let expected = {
+            "dependencies": [
+                "web"
+            ],
+        };
+        let result = mapDcKeyToBatect(mapping, "depends_on", "redis", input, warnings);
+        expect(result).toEqual(expected);
     });
 });
 
-describe("mapDcKeyToBatect", function() {
-   it("should map one key to another", function() {
-      let input = {
-          "depends_on": [
-              "web"
-          ],
-      };
-      let mapping = {
-          "depends_on": "dependencies"
-      };
-      let expected = {
-          "dependencies": [
-              "web"
-          ],
-      };
-      let result = mapDcKeyToBatect(mapping, "depends_on", "redis", input);
-      expect(result).toEqual(expected);
-   });
-});
+describe("dcServiceToBatect", function () {
 
-describe("dcServiceToBatect", function() {
-    beforeEach(function () {
-        warnOnUnsupportedKeys = jasmine.createSpy("warnOnUnsupportedKeys", function () {
-        });
-        displayCard = jasmine.createSpy("displayCard", function (type, heading, message) {
-        });
-    });
-
-    it("converts a docker-compose service to a batect container", function() {
-        let input =  {
+    it("converts a docker-compose service to a batect container", function () {
+        let input = {
             "image": "alpine:latest",
             "healthcheck": {
                 "interval": "5s",
@@ -353,52 +285,38 @@ describe("dcServiceToBatect", function() {
                 "interval": "5s",
             }
         };
-        let result = dcServiceToBatect("alpine", input);
+        let result = dcServiceToBatect("alpine", input, warnings);
         expect(result).toEqual(expected);
     });
 
-    it("should check for unsupported keys", function () {
-        let input =  {
-            "image": "alpine:latest",
-        };
-        dcServiceToBatect("alpine", input);
-        expect(warnOnUnsupportedKeys.calls.count()).toEqual(1);
-    });
-
     it("should warn if both 'build' and 'image' are set, and only keep 'build'", function () {
-        let input =  {
+        let input = {
             "image": "alpine:latest",
             "build": "./docker",
         };
         let expected = {
             "build_directory": "./docker",
         };
-        let result = dcServiceToBatect("alpine", input);
+        let result = dcServiceToBatect("alpine", input, warnings);
         expect(result).toEqual(expected);
-        expect(displayCard.calls.count()).toEqual(1);
-        expect(displayCard.calls.first().args).toEqual([
-            "warning",
-            "Conflicting values for service alpine",
-            "Both 'build' and 'image' are specified. 'image' will be dropped."
-        ]);
+        expect(warnings.conflictingValues[0]).toEqual({
+            type: "service",
+            service: "alpine",
+            key: "build",
+            msg: "Both 'build' and 'image' are specified. 'image' will be dropped."
+        });
     });
 });
 
-describe("dcPortToBatect", function() {
-    beforeEach(function () {
-        warnOnUnsupportedKeys = jasmine.createSpy("warnOnUnsupportedKeys", function () {
-        });
-        displayCard = jasmine.createSpy("displayCard", function (type, heading, message) {
-        });
+describe("dcPortToBatect", function () {
+
+    it("should pass a string without conversion", function () {
+        let input = "8000:8000";
+        let result = dcPortToBatect(input, "web", warnings);
+        expect(result).toEqual(input);
     });
 
-    it("should pass a string without conversion", function() {
-       let input = "8000:8000";
-       let result = dcPortToBatect(input, "web");
-       expect(result).toEqual(input);
-    });
-
-    it("should convert a long syntax port to batect format", function() {
+    it("should convert a long syntax port to batect format", function () {
         let input = {
             "target": "80",
             "published": "8000",
@@ -407,78 +325,65 @@ describe("dcPortToBatect", function() {
             "local": "8000",
             "container": "80",
         };
-        let result = dcPortToBatect(input, "web");
+        let result = dcPortToBatect(input, "web", warnings);
         expect(result).toEqual(expected);
     });
 
-    it("should check for unsupported keys if given an object", function() {
-        let input = {
-            "target": "80",
-            "published": "8000",
-        };
-        dcPortToBatect(input, "web");
-        expect(warnOnUnsupportedKeys.calls.count()).toEqual(1);
-        expect(warnOnUnsupportedKeys.calls.first().args).toEqual([
-            "service web",
-            ["target", "published", "protocol"],
-            ["target", "published"],
-        ]);
-    });
-
-    it("should warn if given a non-tcp protocol in long syntax and return nothing", function() {
+    it("should warn if given a non-tcp protocol in long syntax and return nothing", function () {
         let input = {
             "target": "80",
             "published": "8000",
             "protocol": "echo",
         };
-        let result = dcPortToBatect(input, "web");
+        let result = dcPortToBatect(input, "web", warnings);
         expect(result).toBeUndefined();
-        expect(displayCard.calls.first().args).toEqual([
-            "warning",
-            "service web - echo ports unsupported",
-            "batect only supports TCP ports"
-        ]);
+        expect(warnings.unsupportedValues[0]).toEqual({
+            service: 'web',
+            type: 'port',
+            key: 'protocol',
+            value: 'echo',
+            msg: "batect only supports TCP ports"
+        });
     });
 
-    it("should warn if given a udp port in short syntax and return nothing", function() {
+    it("should warn if given a udp port in short syntax and return nothing", function () {
         let input = "6060:6060/udp";
-        let result = dcPortToBatect(input, "web");
+        let result = dcPortToBatect(input, "web", warnings);
         expect(result).toBeUndefined();
-        expect(displayCard.calls.first().args).toEqual([
-            "warning",
-            "service web - UDP ports unsupported",
-            "batect only supports TCP ports"
-        ]);
+        expect(warnings.unsupportedValues[0]).toEqual({
+            service: 'web',
+            type: 'port',
+            key: 'port',
+            value: '6060:6060/udp',
+            msg: "UDP ports unsupported. batect only supports TCP ports"
+        });
     });
 });
 
-describe("dcPortArrayToBatect", function() {
-    beforeEach(function () {
-        warnOnUnsupportedKeys = jasmine.createSpy("warnOnUnsupportedKeys", function () {
-        });
-    });
-    it("should return an array of ports", function() {
-       let input = {
-           "ports": [
-               "4000",
-               "6000:6000",
-           ],
-       } ;
-       let result = dcPortArrayToBatect(input, "web");
-       expect(result).toEqual(input["ports"]);
+describe("dcPortArrayToBatect", function () {
+
+    it("should return an array of ports", function () {
+        let input = {
+            "ports": [
+                "4000",
+                "6000:6000",
+            ],
+        };
+        let result = dcPortArrayToBatect(input, "web", warnings);
+        expect(result).toEqual(input["ports"]);
     });
 
-    it("should return expose ports as ports", function() {
+    it("should return expose ports as ports", function () {
         let input = {
             "expose": [
                 "4000",
             ],
-        } ;
-        let result = dcPortArrayToBatect(input, "web");
+        };
+        let result = dcPortArrayToBatect(input, "web", warnings);
         expect(result).toEqual(input["expose"]);
     });
 
-    it("should combine ports and expose", function() {
+    it("should combine ports and expose", function () {
         let input = {
             "expose": [
                 "4000",
@@ -497,7 +402,7 @@ describe("dcPortArrayToBatect", function() {
                 "local": "5000",
             }
         ];
-        let result = dcPortArrayToBatect(input, "web");
+        let result = dcPortArrayToBatect(input, "web", warnings);
         expect(result).toEqual(expected);
     });
 })
