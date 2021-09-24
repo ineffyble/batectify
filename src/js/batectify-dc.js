@@ -204,7 +204,7 @@ function dcPortToBatect(port, serviceName, warnings) {
         }
         return batectPort;
     } else {
-        if (port.match(/\/udp/)) {
+        if (port.toString().match(/\/udp/)) {
             warnings.unsupportedValues.push({ type: "port", service: serviceName, key: "port", value: port, msg: "UDP ports unsupported. batect only supports TCP ports" });
             return;
         }
