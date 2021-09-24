@@ -457,6 +457,22 @@ describe("dcServiceToBatect", function () {
             msg: "Both 'build' and 'image' are specified. 'image' will be dropped."
         });
     });
+
+    it("should return nothing and warn for expose ports", function () {
+        let input = {
+            "expose": [
+                "4000",
+            ],
+        };
+        let result = dcServiceToBatect("web", input, warnings);
+        expect(result).toEqual({});
+        expect(warnings.unsupportedKeys[0]).toEqual({
+            type: "service",
+            service: "web",
+            key: "expose",
+            msg: "'expose' has no equivalent in batect as all container ports are networked internally"
+        })
+    });
 });
 
 describe("dcPortToBatect", function () {
@@ -465,6 +481,19 @@ describe("dcPortToBatect", function () {
         let input = "8000:8000";
         let result = dcPortToBatect(input, "web", warnings);
         expect(result).toEqual(input);
+    });
+
+    it("should warn and return nothing if given a container-port-only string ", function () {
+        let input = "8000";
+        let result = dcPortToBatect(input, "web", warnings);
+        expect(result).toBeUndefined();
+        expect(warnings.unsupportedValues[0]).toEqual({
+            type: "port",
+            service: "web",
+            key: "port",
+            value: "8000",
+            msg: "specifying just a container port is not supported. this is generally not needed as batect networks all container ports internally regardless."
+        })
     });
 
     it("should convert a long syntax port to batect format", function () {
@@ -516,7 +545,7 @@ describe("dcPortArrayToBatect", function () {
     it("should return an array of ports", function () {
         let input = {
             "ports": [
-                "4000",
+                "4000:4000",
                 "6000:6000",
             ],
         };
@@ -524,36 +553,4 @@ describe("dcPortArrayToBatect", function () {
         expect(result).toEqual(input["ports"]);
     });
 
-    it("should return expose ports as ports", function () {
-        let input = {
-            "expose": [
-                "4000",
-            ],
-        };
-        let result = dcPortArrayToBatect(input, "web", warnings);
-        expect(result).toEqual(input["expose"]);
-    });
-
-    it("should combine ports and expose", function () {
-        let input = {
-            "expose": [
-                "4000",
-            ],
-            "ports": [
-                {
-                    "target": "4000",
-                    "published": "5000",
-                }
-            ]
-        };
-        let expected = [
-            "4000",
-            {
-                "container": "4000",
-                "local": "5000",
-            }
-        ];
-        let result = dcPortArrayToBatect(input, "web", warnings);
-        expect(result).toEqual(expected);
-    });
-})
+});

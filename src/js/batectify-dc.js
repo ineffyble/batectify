@@ -75,6 +75,8 @@ function dcServiceToBatect(name, dcs, warnings) {
                     container["volumes"] = dcVolumeArrayToBatect(dcs, key, name, warnings);
                     break;
                 case "expose":
+                    warnings.unsupportedKeys.push({ type: 'service', service: name, key, msg: "'expose' has no equivalent in batect as all container ports are networked internally" });
+                    break;
                 case "ports":
                     container["ports"] = dcPortArrayToBatect(dcs, name, warnings);
                     break;
@@ -271,11 +273,15 @@ function dcPortToBatect(port, serviceName, warnings) {
         }
         return batectPort;
     } else {
+        if (port.toString().indexOf(':') === -1) {
+            warnings.unsupportedValues.push({ type: "port", service: serviceName, key: "port", value: port, msg: "specifying just a container port is not supported. this is generally not needed as batect networks all container ports internally regardless." });
+            return;
+        }
         if (port.toString().match(/\/udp/)) {
             warnings.unsupportedValues.push({ type: "port", service: serviceName, key: "port", value: port, msg: "UDP ports unsupported. batect only supports TCP ports" });
             return;
         }
-        return port;
+        return port.toString();
     }
 }
 
