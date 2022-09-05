@@ -7,7 +7,7 @@
   "dependencies": {},
   "devDependencies": {
     "execa": "^5.1.1",
-    "jasmine": "^3.9.0",
+    "jasmine": "^4.4.0",
     "js-yaml": "^4.1.0",
     "nodemon": "^2.0.13"
   },
